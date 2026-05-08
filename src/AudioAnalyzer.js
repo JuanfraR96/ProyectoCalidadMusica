@@ -90,36 +90,53 @@ export async function analyzeAudioFile(file, onProgress) {
   
   const cutoffFreq = cutoffBin * hzPerBin;
   
+  // Determinar la calidad declarada primero
+  let declaredBitrate = "Desconocido";
+  let kbps = 0;
+  const isLosslessFormat = file.name.toLowerCase().match(/\.(flac|wav|alac|aiff)$/i);
+
+  if (metadata && metadata.format && metadata.format.bitrate) {
+    kbps = Math.round(metadata.format.bitrate / 1000);
+    declaredBitrate = `${kbps} kbps`;
+    if (isLosslessFormat && kbps > 500) {
+        declaredBitrate += " (Lossless)";
+    }
+  } else if (isLosslessFormat) {
+    declaredBitrate = "Lossless (FLAC/WAV)";
+    kbps = 900; // Valor de referencia aproximado
+  }
+
   // 5. Estimate Real Quality
   let realQuality = "Desconocida";
-  let isLossless = false;
+  let isFake = false;
   
-  if (cutoffFreq >= 20000) {
-    realQuality = "320 kbps / Lossless";
-    isLossless = true;
-  } else if (cutoffFreq >= 18000) {
-    realQuality = "192 kbps - 256 kbps";
+  if (cutoffFreq >= 21500) {
+    realQuality = "Lossless / High-Res";
+  } else if (cutoffFreq >= 20000) {
+    realQuality = "320 kbps";
+  } else if (cutoffFreq >= 18500) {
+    realQuality = "256 kbps";
+  } else if (cutoffFreq >= 17000) {
+    realQuality = "192 kbps";
   } else if (cutoffFreq >= 15500) {
     realQuality = "128 kbps";
   } else {
     realQuality = "Menor a 128 kbps";
   }
   
-  // Find declared quality
-  let declaredBitrate = "Desconocido";
-  let isFake = false;
-  if (metadata && metadata.format && metadata.format.bitrate) {
-    const kbps = Math.round(metadata.format.bitrate / 1000);
-    declaredBitrate = `${kbps} kbps`;
-    
-    // Check if it's fake
-    if (kbps >= 320 && cutoffFreq < 19000) {
-      isFake = true; // Claiming 320 but cuts off like 128/192
+  // Detección de Falsos (Fake / Upscaled)
+  if (kbps > 0) {
+    // Si dice ser Lossless (FLAC > 500kbps) pero corta antes de 21kHz, es falso
+    if (kbps >= 500 && cutoffFreq < 21000) {
+      isFake = true;
+    } 
+    // Si dice ser 320kbps pero corta como un 128/192
+    else if (kbps >= 320 && kbps < 500 && cutoffFreq < 19500) {
+      isFake = true; 
     }
-  } else if (file.name.toLowerCase().endsWith('.flac') || file.name.toLowerCase().endsWith('.wav')) {
-    declaredBitrate = "Lossless (FLAC/WAV)";
-    if (cutoffFreq < 20000) {
-      isFake = true; // It's a FLAC but with 128kbps audio inside
+  } else if (isLosslessFormat) {
+    if (cutoffFreq < 21000) {
+      isFake = true; 
     }
   }
 
